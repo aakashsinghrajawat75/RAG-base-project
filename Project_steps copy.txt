@@ -1,0 +1,98 @@
+Step1:  Install the tools
+!pip install -q transformers sentence-transformers faiss-cpu pypdf python-docx nltk gradio pymupdf
+
+Step2: set up all required libraries
+import os, io, math, gc, json, textwrap, re, random, collections
+
+from dataclasses import dataclass
+from typing import List, Dict, Tuple
+
+import nltk
+nltk.download('punkt')
+nltk.download('punkt_tab')
+from nltk.tokenize import sent_tokenize
+
+from google.colab import files
+from datetime import datetime
+
+from pypdf import PdfReader
+from docx import Document as DocxDocument
+
+
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+
+import fitz  # PyMuPDF
+import faiss
+import numpy as np
+import gradio as gr
+import torch
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE, torch.cuda.get_device_name(0) if DEVICE=="cuda" else "CPU"
+
+
+Step3: Uploading your documents with limits
+MAX_FILES = 5
+MAX_MB_PER_FILE = 15  # adjust if needed (e.g., 10–25 MB)
+ALLOWED_EXTS = {'.pdf', '.docx', '.txt'}
+
+print(f"Please upload up to {MAX_FILES} files (PDF/DOCX/TXT). Max per file: {MAX_MB_PER_FILE} MB.")
+uploaded = files.upload()  # user selects files
+
+Step4: Validate and accept your uploaded files
+def ext_of(name):
+    return os.path.splitext(name)[1].lower()
+
+assert len(uploaded) > 0, "No files uploaded."
+assert len(uploaded) <= MAX_FILES, f"Please upload at most {MAX_FILES} files."
+
+docs_raw = []
+for fname, b in uploaded.items():
+    assert ext_of(fname) in ALLOWED_EXTS, f"Unsupported file type for {fname}. Allowed: {ALLOWED_EXTS}"
+    size_mb = len(b) / (1024*1024)
+    assert size_mb <= MAX_MB_PER_FILE, f"{fname} is {size_mb:.2f} MB, exceeds {MAX_MB_PER_FILE} MB."
+    docs_raw.append((fname, b))
+
+print("Uploaded files:", [d[0] for d in docs_raw])
+
+
+Step 5: Function to convert uploaded text file bytes into readable text
+def read_txt(bytes_blob: bytes) -> str:
+    return io.BytesIO(bytes_blob).read().decode('utf-8', errors='ignore')
+
+Step6: Write a function that reads a PDF (given as bytes) and returns all its text
+def read_pdf(bytes_blob: bytes) -> str:
+    reader = PdfReader(io.BytesIO(bytes_blob))
+    texts = []
+    for page in reader.pages:
+        try:
+            texts.append(page.extract_text() or "")
+        except:
+            texts.append("")
+    return "\n".join(texts)
+
+
+
+
+Step 7: Write a function that reads a Word (.docx) file from bytes and returns its text
+def read_docx(bytes_blob: bytes) -> str:
+    fh = io.BytesIO(bytes_blob)
+    doc = DocxDocument(fh)
+    return "\n".join([p.text for p in doc.paragraphs])
+
+
+
+Step 8: Write a function that picks the right reader based on file extension and returns the text
+def load_text_by_ext(fname: str, blob: bytes) -> str:
+    ext = os.path.splitext(fname)[1].lower()
+    if ext == '.txt':
+        return read_txt(blob)
+    elif ext == '.pdf':
+        return read_pdf(blob)
+    elif ext == '.docx':
+        return read_docx(blob)
+    else:
+        raise ValueError(f"Unsupported extension: {ext}")
+
+
